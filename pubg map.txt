@@ -1,0 +1,48 @@
+from flask import Flask, render_template
+import requests
+
+app = Flask(__name__)
+
+# Enter your PUBG API key here
+api_key = 'YOUR_API_KEY'
+
+# Define the API endpoint URLs
+player_endpoint = 'https://api.pubg.com/shards/pc-na/players?filter[playerNames]=PLAYER_NAME'
+match_endpoint = 'https://api.pubg.com/shards/pc-na/matches/MATCH_ID'
+
+# Define the Flask route for the home page
+@app.route('/')
+def home():
+    return render_template('home.html')
+
+# Define the Flask route for the map page
+@app.route('/map/<player_name>')
+def map(player_name):
+    # Fetch the player ID
+    player_url = player_endpoint.replace('PLAYER_NAME', player_name)
+    player_data = requests.get(player_url, headers={'Authorization': 'Bearer ' + api_key}).json()
+    player_id = player_data['data'][0]['id']
+
+    # Fetch the latest match ID for the player
+    match_url = match_endpoint.replace('MATCH_ID', player_data['data'][0]['relationships']['matches']['data'][0]['id'])
+    match_data = requests.get(match_url, headers={'Authorization': 'Bearer ' + api_key}).json()
+    telemetry_url = match_data['data']['relationships']['assets']['data'][0]['attributes']['URL']
+
+    # Fetch the telemetry data for the match
+    telemetry_data = requests.get(telemetry_url, headers={'Authorization': 'Bearer ' + api_key}).json()
+
+    # Extract the player and vehicle locations from the telemetry data
+    player_location = {}
+    vehicle_locations = {}
+    for event in telemetry_data:
+        if event['_T'] == 'LogPlayerPosition':
+            if event['accountId'] == player_id:
+                player_location = {'x': event['character']['location']['x'], 'y': event['character']['location']['y']}
+        elif event['_T'] == 'LogVehicle':
+            vehicle_locations[event['vehicle']['vehicleId']] = {'x': event['vehicle']['location']['x'], 'y': event['vehicle']['location']['y']}
+
+    # Render the map page with the player and vehicle locations
+    return render_template('map.html', player_location=player_location, vehicle_locations=vehicle_locations)
+
+if __name__ == '__main__':
+    app.run(debug=True)
